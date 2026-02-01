@@ -1,6 +1,8 @@
 use avian3d::prelude::*;
 use bevy::{
+    color::palettes::tailwind,
     input::common_conditions::input_just_pressed,
+    pbr::{Atmosphere, ScatteringMedium},
     prelude::*,
     window::{CursorGrabMode, CursorOptions},
 };
@@ -22,6 +24,11 @@ fn main() -> AppExit {
         .add_plugins(EnhancedInputPlugin)
         .add_plugins(AhoyPlugins::default())
         .add_input_context::<PlayerInput>()
+        .insert_resource(GlobalAmbientLight {
+            color: tailwind::BLUE_400.into(),
+            brightness: 450.,
+            ..Default::default()
+        })
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -46,12 +53,17 @@ fn release_cursor(mut cursor: Single<&mut CursorOptions>) {
 #[derive(Component)]
 struct PlayerInput;
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
+) {
     commands.spawn(SceneRoot(asset_server.load("ankh.map#Scene")));
 
     commands.spawn((
-        Transform::from_xyz(0.0, 1.0, 0.0).looking_at(vec3(1.0, -2.0, -2.0), Vec3::Y),
+        Transform::from_xyz(0.0, 1.0, 0.0).looking_at(vec3(-0.2, -2.0, 0.1), Vec3::Y),
         DirectionalLight {
+            color: tailwind::GREEN_100.into(),
             shadows_enabled: true,
             ..default()
         },
@@ -59,9 +71,12 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     let player = commands
         .spawn((
-            CharacterController::default(),
-            Collider::cylinder(0.7, 1.8),
-            Transform::from_xyz(0.0, 10.0, 0.0),
+            CharacterController {
+                friction_hz: 24.,
+                ..default()
+            },
+            Collider::cylinder(0.4, 1.8),
+            Transform::from_xyz(6.0, 13.0, 3.0),
             PlayerInput,
             actions!(PlayerInput[
                 (
@@ -69,6 +84,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                     DeadZone::default(),
                     Bindings::spawn((
                         Cardinal::wasd_keys(),
+                        Cardinal::arrows(),
                         Axial::left_stick()
                     ))
                 ),
@@ -94,6 +110,12 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     commands.spawn((
         Camera3d::default(),
+        Projection::Perspective(PerspectiveProjection {
+            fov: 70f32.to_radians(),
+            near: 0.01,
+            ..default()
+        }),
+        Atmosphere::earthlike(scattering_mediums.add(ScatteringMedium::default())),
         CharacterControllerCameraOf::new(player),
     ));
 }
