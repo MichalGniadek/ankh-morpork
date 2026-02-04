@@ -59,11 +59,19 @@ fn init_box(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
 ) {
     for entity in q {
         commands.entity(entity).insert((
             Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-            MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+            // MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color_texture: Some(
+                    asset_server.load("textures/timber_square_planks_cross.png"),
+                ),
+                perceptual_roughness: 1.,
+                ..default()
+            })),
             Mass(15.),
             RigidBody::Dynamic,
             TransformInterpolation,
