@@ -8,7 +8,7 @@ use bevy::{
 };
 use bevy_ahoy::prelude::*;
 use bevy_enhanced_input::prelude::*;
-use bevy_trenchbroom::prelude::*;
+use bevy_trenchbroom::{anyhow, class::QuakeClassSpawnView, prelude::*};
 use bevy_trenchbroom_avian::AvianPhysicsBackend;
 
 fn main() -> AppExit {
@@ -35,6 +35,7 @@ fn main() -> AppExit {
             (
                 capture_cursor.run_if(input_just_pressed(MouseButton::Left)),
                 release_cursor.run_if(input_just_pressed(KeyCode::Escape)),
+                init_box,
             ),
         )
         .run()
@@ -50,6 +51,44 @@ fn release_cursor(mut cursor: Single<&mut CursorOptions>) {
     cursor.grab_mode = CursorGrabMode::None;
 }
 
+fn update_box(view: &mut QuakeClassSpawnView) -> anyhow::Result<()> {
+    view.world.run_system_cached_with(
+        |In(entity): In<Entity>,
+         mut commands: Commands,
+         mut meshes: ResMut<Assets<Mesh>>,
+         mut materials: ResMut<Assets<StandardMaterial>>| {
+            commands.entity(entity).insert((
+                Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+                MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+                RigidBody::Dynamic,
+                Collider::cuboid(1., 1., 1.),
+            ));
+        },
+        view.entity,
+    )?;
+    Ok(())
+}
+
+fn init_box(
+    q: Query<Entity, Added<Box>>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for entity in q {
+        commands.entity(entity).insert((
+            Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
+            MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+            RigidBody::Dynamic,
+            Collider::cuboid(1., 1., 1.),
+        ));
+    }
+}
+
+// #[point_class(hooks(SceneHooks::new().push(update_box)))]
+#[point_class]
+struct Box;
+
 #[derive(Component)]
 struct PlayerInput;
 
@@ -63,7 +102,8 @@ fn setup(
     commands.spawn((
         Transform::from_xyz(0.0, 1.0, 0.0).looking_at(vec3(-0.2, -2.0, 0.1), Vec3::Y),
         DirectionalLight {
-            color: tailwind::GREEN_100.into(),
+            // color: tailwind::GREEN_100.into(),
+            illuminance: 10.,
             shadows_enabled: true,
             ..default()
         },
@@ -72,7 +112,7 @@ fn setup(
     let player = commands
         .spawn((
             CharacterController {
-                friction_hz: 24.,
+                friction_hz: 36.,
                 ..default()
             },
             Collider::cylinder(0.4, 1.8),
@@ -91,10 +131,6 @@ fn setup(
                 (
                     Action::<Jump>::new(),
                     bindings![KeyCode::Space,  GamepadButton::South],
-                ),
-                (
-                    Action::<Crouch>::new(),
-                    bindings![KeyCode::ControlLeft, GamepadButton::LeftTrigger],
                 ),
                 (
                     Action::<RotateCamera>::new(),
