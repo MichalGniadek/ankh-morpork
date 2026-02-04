@@ -12,6 +12,7 @@ avian3d = { git = "https://github.com/avianphysics/avian", version = "0.6.0-dev"
 bevy = { version = "0.18", features = ["debug"] }
 bevy_ahoy = { git = "https://github.com/janhohenheim/bevy_ahoy", version = "0.0.3" }
 bevy_enhanced_input = "0.22.2"
+# rev = "dd52cf42f8b02800605f6c08ab0ea635b46103c8" is Hohenheim PR for new avian
 bevy_trenchbroom = { git = "https://github.com/Noxmore/bevy_trenchbroom", rev = "dd52cf42f8b02800605f6c08ab0ea635b46103c8", features = [
   "physics-integration"
 ] }
