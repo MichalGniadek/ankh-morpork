@@ -2,6 +2,7 @@ use avian3d::prelude::*;
 use bevy::{
     color::palettes::tailwind,
     input::common_conditions::input_just_pressed,
+    light::PointLightShadowMap,
     pbr::{Atmosphere, ScatteringMedium},
     prelude::*,
     window::{CursorGrabMode, CursorOptions},
@@ -32,6 +33,7 @@ fn main() -> AppExit {
             brightness: 450.,
             ..Default::default()
         })
+        .insert_resource(PointLightShadowMap { size: 32 })
         .add_systems(Startup, setup)
         .add_systems(
             Update,
