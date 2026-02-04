@@ -6,9 +6,12 @@ use bevy::{
     prelude::*,
     window::{CursorGrabMode, CursorOptions},
 };
-use bevy_ahoy::prelude::*;
-use bevy_enhanced_input::prelude::*;
-use bevy_trenchbroom::{anyhow, class::QuakeClassSpawnView, prelude::*};
+use bevy_ahoy::{
+    pickup::prop::{PreferredPickupDistanceOverride, PreferredPickupRotation},
+    prelude::*,
+};
+use bevy_enhanced_input::prelude::{Press, *};
+use bevy_trenchbroom::prelude::*;
 use bevy_trenchbroom_avian::AvianPhysicsBackend;
 
 fn main() -> AppExit {
@@ -51,24 +54,6 @@ fn release_cursor(mut cursor: Single<&mut CursorOptions>) {
     cursor.grab_mode = CursorGrabMode::None;
 }
 
-fn update_box(view: &mut QuakeClassSpawnView) -> anyhow::Result<()> {
-    view.world.run_system_cached_with(
-        |In(entity): In<Entity>,
-         mut commands: Commands,
-         mut meshes: ResMut<Assets<Mesh>>,
-         mut materials: ResMut<Assets<StandardMaterial>>| {
-            commands.entity(entity).insert((
-                Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-                MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
-                RigidBody::Dynamic,
-                Collider::cuboid(1., 1., 1.),
-            ));
-        },
-        view.entity,
-    )?;
-    Ok(())
-}
-
 fn init_box(
     q: Query<Entity, Added<Box>>,
     mut commands: Commands,
@@ -79,7 +64,12 @@ fn init_box(
         commands.entity(entity).insert((
             Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
             MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
+            Mass(15.),
             RigidBody::Dynamic,
+            TransformInterpolation,
+            PreferredPickupRotation::default(),
+            PreferredPickupDistanceOverride(1.5),
+            CollisionLayers::new(CollisionLayer::Prop, LayerMask::ALL),
             Collider::cuboid(1., 1., 1.),
         ));
     }
@@ -91,6 +81,14 @@ struct Box;
 
 #[derive(Component)]
 struct PlayerInput;
+
+#[derive(Debug, PhysicsLayer, Default)]
+enum CollisionLayer {
+    #[default]
+    Default,
+    Player,
+    Prop,
+}
 
 fn setup(
     mut commands: Commands,
@@ -116,6 +114,7 @@ fn setup(
                 ..default()
             },
             Collider::cylinder(0.4, 1.8),
+            CollisionLayers::new(CollisionLayer::Player, LayerMask::ALL),
             Transform::from_xyz(6.0, 13.0, 3.0),
             PlayerInput,
             actions!(PlayerInput[
@@ -140,6 +139,18 @@ fn setup(
                         Axial::right_stick()
                     ))
                 ),
+                (
+                    Action::<PullObject>::new(),
+                    ActionSettings { consume_input: true, ..default() },
+                    Press::default(),
+                    bindings![MouseButton::Left, MouseButton::Right]
+                ),
+                (
+                    Action::<DropObject>::new(),
+                    ActionSettings { consume_input: true, ..default() },
+                    Press::default(),
+                    bindings![MouseButton::Left, MouseButton::Right]
+                ),
             ]),
         ))
         .id();
@@ -153,5 +164,11 @@ fn setup(
         }),
         Atmosphere::earthlike(scattering_mediums.add(ScatteringMedium::default())),
         CharacterControllerCameraOf::new(player),
+        PickupConfig {
+            prop_filter: SpatialQueryFilter::from_mask(CollisionLayer::Prop),
+            actor_filter: SpatialQueryFilter::from_mask(CollisionLayer::Player),
+            obstacle_filter: SpatialQueryFilter::from_mask(CollisionLayer::Default),
+            ..default()
+        },
     ));
 }
