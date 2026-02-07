@@ -27,7 +27,8 @@ fn main() -> AppExit {
         .add_plugins(TrenchBroomPhysicsPlugin::new(AvianPhysicsBackend))
         .add_plugins(EnhancedInputPlugin)
         .add_plugins(AhoyPlugins::default())
-        .add_input_context::<PlayerInput>()
+        .add_input_context::<PlayerMovement>()
+        .add_input_context::<PlayerLook>()
         .insert_resource(GlobalAmbientLight {
             color: tailwind::BLUE_400.into(),
             brightness: 450.,
@@ -41,6 +42,7 @@ fn main() -> AppExit {
                 capture_cursor.run_if(input_just_pressed(MouseButton::Left)),
                 release_cursor.run_if(input_just_pressed(KeyCode::Escape)),
                 init_box,
+                check_for_river,
                 speedup_lights,
             ),
         )
@@ -93,12 +95,17 @@ fn init_box(
     }
 }
 
-// #[point_class(hooks(SceneHooks::new().push(update_box)))]
 #[point_class]
 struct Box;
 
+#[solid_class]
+struct River;
+
 #[derive(Component)]
-struct PlayerInput;
+struct PlayerLook;
+
+#[derive(Component)]
+struct PlayerMovement;
 
 #[derive(Debug, PhysicsLayer, Default)]
 enum CollisionLayer {
@@ -107,6 +114,8 @@ enum CollisionLayer {
     Player,
     Prop,
 }
+
+const PLAYER_START_TRANSFORM: Transform = Transform::from_xyz(6.0, 11.5, 2.0);
 
 fn setup(
     mut commands: Commands,
@@ -133,9 +142,20 @@ fn setup(
             },
             Collider::cylinder(0.4, 1.8),
             CollisionLayers::new(CollisionLayer::Player, LayerMask::ALL),
-            Transform::from_xyz(6.0, 13.0, 3.0),
-            PlayerInput,
-            actions!(PlayerInput[
+            PLAYER_START_TRANSFORM,
+            PlayerLook,
+            actions!(PlayerLook[
+                (
+                    Action::<RotateCamera>::new(),
+                    Scale::splat(0.07),
+                    Bindings::spawn((
+                        Spawn(Binding::mouse_motion()),
+                        Axial::right_stick()
+                    ))
+                ),
+            ]),
+            PlayerMovement,
+            actions!(PlayerMovement[
                 (
                     Action::<Movement>::new(),
                     DeadZone::default(),
@@ -189,4 +209,37 @@ fn setup(
             ..default()
         },
     ));
+}
+
+fn check_for_river(
+    mut state: Single<(
+        Entity,
+        &CharacterControllerState,
+        &mut CharacterController,
+        &mut Transform,
+    )>,
+    rivers: Query<(), With<River>>,
+    mut commands: Commands,
+    time: Res<Time>,
+) {
+    let Some(grounded) = state.1.grounded else {
+        return;
+    };
+    if !rivers.contains(grounded.entity) {
+        return;
+    }
+
+    commands
+        .entity(state.0)
+        .insert(ContextActivity::<PlayerMovement>::INACTIVE);
+
+    state.2.standing_view_height -= 0.5 * time.delta_secs();
+
+    if state.2.standing_view_height <= 0.1 {
+        state.2.standing_view_height = CharacterController::default().standing_view_height;
+        *state.3 = PLAYER_START_TRANSFORM;
+        commands
+            .entity(state.0)
+            .insert(ContextActivity::<PlayerMovement>::ACTIVE);
+    }
 }
