@@ -42,6 +42,8 @@ fn main() -> AppExit {
                 capture_cursor.run_if(input_just_pressed(MouseButton::Left)),
                 release_cursor.run_if(input_just_pressed(KeyCode::Escape)),
                 init_box,
+                init_lever,
+                lower_bars,
                 check_for_river,
                 speedup_lights,
             ),
@@ -95,11 +97,27 @@ fn init_box(
     }
 }
 
+fn init_lever(q: Query<Entity, Added<Lever>>, mut commands: Commands) {
+    for entity in q {
+        commands.entity(entity).insert((
+            RigidBody::Static,
+            CollisionLayers::new(CollisionLayer::Default, LayerMask::ALL),
+            Collider::cuboid(1., 0.5, 1.),
+        ));
+    }
+}
+
 #[point_class]
 struct Box;
 
 #[solid_class]
 struct River;
+
+#[point_class(model("models/Button.gltf"), hooks(SceneHooks::new().spawn_class_gltf::<Self>()))]
+struct Lever;
+
+#[solid_class]
+struct Bars;
 
 #[derive(Component)]
 struct PlayerLook;
@@ -134,15 +152,20 @@ fn setup(
         },
     ));
 
+    let mut trans = PLAYER_START_TRANSFORM;
+    trans.translation.y += 4.;
+
     let player = commands
         .spawn((
             CharacterController {
                 friction_hz: 36.,
+                air_speed: 11.,
+                max_air_wish_speed: 4.,
                 ..default()
             },
             Collider::cylinder(0.4, 1.8),
             CollisionLayers::new(CollisionLayer::Player, LayerMask::ALL),
-            PLAYER_START_TRANSFORM,
+            trans,
             PlayerLook,
             actions!(PlayerLook[
                 (
@@ -211,6 +234,9 @@ fn setup(
     ));
 }
 
+#[derive(Debug, Component)]
+struct SteppedOnButton;
+
 fn check_for_river(
     mut state: Single<(
         Entity,
@@ -219,12 +245,16 @@ fn check_for_river(
         &mut Transform,
     )>,
     rivers: Query<(), With<River>>,
+    lever: Query<(), With<Lever>>,
     mut commands: Commands,
     time: Res<Time>,
 ) {
     let Some(grounded) = state.1.grounded else {
         return;
     };
+    if lever.contains(grounded.entity) {
+        commands.entity(state.0).insert(SteppedOnButton);
+    }
     if !rivers.contains(grounded.entity) {
         return;
     }
@@ -241,5 +271,17 @@ fn check_for_river(
         commands
             .entity(state.0)
             .insert(ContextActivity::<PlayerMovement>::ACTIVE);
+    }
+}
+
+fn lower_bars(
+    bars: Query<&mut Transform, With<Bars>>,
+    player: Option<Single<&SteppedOnButton>>,
+    time: Res<Time>,
+) {
+    if player.is_some() {
+        for mut bar in bars {
+            bar.translation.y -= 0.8 * time.delta_secs();
+        }
     }
 }
