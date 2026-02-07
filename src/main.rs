@@ -41,6 +41,7 @@ fn main() -> AppExit {
                 capture_cursor.run_if(input_just_pressed(MouseButton::Left)),
                 release_cursor.run_if(input_just_pressed(KeyCode::Escape)),
                 init_box,
+                speedup_lights,
             ),
         )
         .run()
@@ -54,6 +55,13 @@ fn capture_cursor(mut cursor: Single<&mut CursorOptions>) {
 fn release_cursor(mut cursor: Single<&mut CursorOptions>) {
     cursor.visible = true;
     cursor.grab_mode = CursorGrabMode::None;
+}
+
+#[allow(unused)]
+fn speedup_lights(q: Query<&mut PointLight, Added<PointLight>>) {
+    for mut l in q {
+        l.shadows_enabled = false;
+    }
 }
 
 fn init_box(
