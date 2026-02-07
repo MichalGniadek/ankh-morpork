@@ -4132,3 +4132,13 @@
 ( 1968 1344 16 ) ( 1968 1344 17 ) ( 1968 1345 16 ) door_metal_frame [ 0 1 0 8 ] [ 0 0 -1 -8 ] 90 1 1
 }
 }
+// entity 311
+{
+"classname" "ticket"
+"origin" "-56 -56 312"
+}
+// entity 312
+{
+"classname" "ticket"
+"origin" "-536 -8 232"
+}

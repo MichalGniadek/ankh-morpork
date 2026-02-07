@@ -1,14 +1,21 @@
 use avian3d::prelude::*;
 use bevy::{
-    color::palettes::tailwind,
+    color::palettes::{css::GOLD, tailwind},
+    core_pipeline::tonemapping::Tonemapping,
     input::common_conditions::input_just_pressed,
     light::PointLightShadowMap,
     pbr::{Atmosphere, ScatteringMedium},
+    post_process::bloom::Bloom,
     prelude::*,
+    render::view::Hdr,
     window::{CursorGrabMode, CursorOptions},
 };
 use bevy_ahoy::{
-    pickup::prop::{PreferredPickupDistanceOverride, PreferredPickupRotation},
+    pickup::{
+        actor::AvianPickupActorState,
+        input::AvianPickupInput,
+        prop::{PreferredPickupDistanceOverride, PreferredPickupRotation},
+    },
     prelude::*,
 };
 use bevy_enhanced_input::prelude::{Press, *};
@@ -43,8 +50,10 @@ fn main() -> AppExit {
                 release_cursor.run_if(input_just_pressed(KeyCode::Escape)),
                 init_box,
                 init_lever,
+                init_ticket,
                 lower_bars,
                 check_for_river,
+                update_ticket,
                 speedup_lights,
             ),
         )
@@ -119,6 +128,64 @@ struct Lever;
 #[solid_class]
 struct Bars;
 
+#[point_class]
+struct Ticket;
+
+fn init_ticket(
+    q: Query<Entity, Added<Ticket>>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for entity in q {
+        commands.entity(entity).insert((
+            Mesh3d(meshes.add(Plane3d::new(vec3(1., 0.3, 0.).normalize(), vec2(0.3, 0.2)))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: GOLD.into(),
+                cull_mode: None,
+                emissive: LinearRgba {
+                    red: 1. * 50.,
+                    green: 0.85 * 30.,
+                    blue: 0.,
+                    alpha: 1.,
+                },
+                ..default()
+            })),
+            Mass(0.1),
+            RigidBody::Dynamic,
+            GravityScale(0.),
+            CollisionLayers::new(CollisionLayer::Ticket, LayerMask::ALL),
+            Collider::cuboid(0.3, 0.3, 0.3),
+        ));
+    }
+}
+
+#[derive(Debug, Component, Default)]
+struct CollectedTickets(u32);
+
+fn update_ticket(
+    tickets: Query<(Entity, &mut Transform), With<Ticket>>,
+    mut player: Single<&mut CollectedTickets>,
+    pickup: Single<(Entity, &AvianPickupActorState)>,
+    mut commands: Commands,
+    time: Res<Time>,
+    mut avian_pickup_input_writer: MessageWriter<AvianPickupInput>,
+) {
+    for (entity, mut tr) in tickets {
+        tr.rotate_axis(Dir3::Y, time.delta_secs());
+        if *pickup.1 == AvianPickupActorState::Holding(entity)
+            || *pickup.1 == AvianPickupActorState::Pulling(entity)
+        {
+            avian_pickup_input_writer.write(AvianPickupInput {
+                action: pickup::input::AvianPickupAction::Drop,
+                actor: pickup.0,
+            });
+            commands.entity(entity).despawn();
+            player.0 += 1;
+        }
+    }
+}
+
 #[derive(Component)]
 struct PlayerLook;
 
@@ -131,6 +198,7 @@ enum CollisionLayer {
     Default,
     Player,
     Prop,
+    Ticket,
 }
 
 const PLAYER_START_TRANSFORM: Transform = Transform::from_xyz(6.0, 11.5, 2.0);
@@ -163,8 +231,9 @@ fn setup(
                 max_air_wish_speed: 4.,
                 ..default()
             },
+            CollectedTickets::default(),
             Collider::cylinder(0.4, 1.8),
-            CollisionLayers::new(CollisionLayer::Player, LayerMask::ALL),
+            CollisionLayers::new(CollisionLayer::Player, LayerMask::DEFAULT),
             trans,
             PlayerLook,
             actions!(PlayerLook[
@@ -223,10 +292,19 @@ fn setup(
             near: 0.01,
             ..default()
         }),
+        Hdr,
+        Bloom {
+            intensity: 0.5,
+            ..default()
+        },
+        Tonemapping::default(),
         Atmosphere::earthlike(scattering_mediums.add(ScatteringMedium::default())),
         CharacterControllerCameraOf::new(player),
         PickupConfig {
-            prop_filter: SpatialQueryFilter::from_mask(CollisionLayer::Prop),
+            prop_filter: SpatialQueryFilter::from_mask([
+                CollisionLayer::Prop,
+                CollisionLayer::Ticket,
+            ]),
             actor_filter: SpatialQueryFilter::from_mask(CollisionLayer::Player),
             obstacle_filter: SpatialQueryFilter::from_mask(CollisionLayer::Default),
             ..default()
