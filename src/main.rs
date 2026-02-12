@@ -3,11 +3,11 @@ use bevy::{
     color::palettes::{css::GOLD, tailwind},
     core_pipeline::tonemapping::Tonemapping,
     input::common_conditions::input_just_pressed,
-    light::PointLightShadowMap,
+    light::{NotShadowCaster, PointLightShadowMap},
     pbr::{Atmosphere, ScatteringMedium},
     post_process::bloom::Bloom,
     prelude::*,
-    render::view::Hdr,
+    render::{experimental::occlusion_culling::OcclusionCulling, view::Hdr},
     window::{CursorGrabMode, CursorOptions},
 };
 use bevy_ahoy::{
@@ -19,13 +19,12 @@ use bevy_ahoy::{
     prelude::*,
 };
 use bevy_enhanced_input::prelude::{Press, *};
-use bevy_trenchbroom::prelude::*;
+use bevy_trenchbroom::{physics::SceneCollidersReady, prelude::*};
 use bevy_trenchbroom_avian::AvianPhysicsBackend;
 
 fn main() -> AppExit {
     App::new()
         .add_plugins(DefaultPlugins)
-        // TODO: disable config creation when release
         .add_plugins(TrenchBroomPlugins(
             TrenchBroomConfig::new("ankh-morpork")
                 .default_solid_scene_hooks(|| SceneHooks::new().convex_collider()),
@@ -54,6 +53,7 @@ fn main() -> AppExit {
                 lower_bars,
                 check_for_river,
                 update_ticket,
+                #[cfg(debug_assertions)]
                 speedup_lights,
             ),
         )
@@ -87,7 +87,6 @@ fn init_box(
     for entity in q {
         commands.entity(entity).insert((
             Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-            // MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
             MeshMaterial3d(materials.add(StandardMaterial {
                 base_color_texture: Some(
                     asset_server.load("textures/timber_square_planks_cross.png"),
@@ -128,7 +127,7 @@ struct Lever;
 #[solid_class]
 struct Bars;
 
-#[point_class]
+#[point_class(color(255 217 0))]
 struct Ticket;
 
 fn init_ticket(
@@ -154,7 +153,8 @@ fn init_ticket(
             Mass(0.1),
             RigidBody::Dynamic,
             GravityScale(0.),
-            CollisionLayers::new(CollisionLayer::Ticket, LayerMask::ALL),
+            NotShadowCaster,
+            CollisionLayers::new(CollisionLayer::Ticket, LayerMask::NONE),
             Collider::cuboid(0.3, 0.3, 0.3),
         ));
     }
@@ -164,14 +164,14 @@ fn init_ticket(
 struct CollectedTickets(u32);
 
 fn update_ticket(
-    tickets: Query<(Entity, &mut Transform), With<Ticket>>,
+    tickets: Query<(Entity, &mut Transform, Has<QueuedToDespawn>), With<Ticket>>,
     mut player: Single<&mut CollectedTickets>,
     pickup: Single<(Entity, &AvianPickupActorState)>,
     mut commands: Commands,
     time: Res<Time>,
     mut avian_pickup_input_writer: MessageWriter<AvianPickupInput>,
 ) {
-    for (entity, mut tr) in tickets {
+    for (entity, mut tr, queued_to_despawn) in tickets {
         tr.rotate_axis(Dir3::Y, time.delta_secs());
         if *pickup.1 == AvianPickupActorState::Holding(entity)
             || *pickup.1 == AvianPickupActorState::Pulling(entity)
@@ -180,11 +180,16 @@ fn update_ticket(
                 action: pickup::input::AvianPickupAction::Drop,
                 actor: pickup.0,
             });
-            commands.entity(entity).despawn();
+            commands.entity(entity).insert(QueuedToDespawn);
             player.0 += 1;
+        } else if queued_to_despawn {
+            commands.entity(entity).despawn();
         }
     }
 }
+
+#[derive(Component)]
+struct QueuedToDespawn;
 
 #[derive(Component)]
 struct PlayerLook;
@@ -203,13 +208,7 @@ enum CollisionLayer {
 
 const PLAYER_START_TRANSFORM: Transform = Transform::from_xyz(6.0, 11.5, 2.0);
 
-fn setup(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut scattering_mediums: ResMut<Assets<ScatteringMedium>>,
-) {
-    commands.spawn(SceneRoot(asset_server.load("ankh.map#Scene")));
-
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
         Transform::from_xyz(0.0, 1.0, 0.0).looking_at(vec3(-0.2, -2.0, 0.1), Vec3::Y),
         DirectionalLight {
@@ -220,96 +219,111 @@ fn setup(
         },
     ));
 
-    let mut trans = PLAYER_START_TRANSFORM;
-    trans.translation.y += 4.;
+    commands
+        .spawn(SceneRoot(asset_server.load("ankh.map#Scene")))
+        .observe(
+            |_: On<SceneCollidersReady>,
+             mut commands: Commands,
+             mut scattering_mediums: ResMut<Assets<ScatteringMedium>>| {
+                let mut trans = PLAYER_START_TRANSFORM;
+                trans.translation.y += 4.;
 
-    let player = commands
-        .spawn((
-            CharacterController {
-                friction_hz: 36.,
-                air_speed: 11.,
-                max_air_wish_speed: 4.,
-                ..default()
+                let player = commands
+                    .spawn((
+                        CharacterController {
+                            friction_hz: 36.,
+                            air_speed: 11.,
+                            max_air_wish_speed: 4.,
+                            filter: SpatialQueryFilter::from_mask([
+                                CollisionLayer::Default,
+                                CollisionLayer::Prop,
+                            ]),
+                            ..default()
+                        },
+                        CollectedTickets::default(),
+                        Collider::cylinder(0.4, 1.8),
+                        CollisionLayers::new(CollisionLayer::Player, LayerMask::DEFAULT),
+                        trans,
+                        PlayerLook,
+                        actions!(PlayerLook[
+                            (
+                                Action::<RotateCamera>::new(),
+                                Scale::splat(0.07),
+                                Bindings::spawn((
+                                    Spawn(Binding::mouse_motion()),
+                                    Axial::right_stick()
+                                ))
+                            ),
+                        ]),
+                        PlayerMovement,
+                        actions!(PlayerMovement[
+                            (
+                                Action::<Movement>::new(),
+                                DeadZone::default(),
+                                Bindings::spawn((
+                                    Cardinal::wasd_keys(),
+                                    Cardinal::arrows(),
+                                    Axial::left_stick()
+                                ))
+                            ),
+                            (
+                                Action::<Jump>::new(),
+                                bindings![KeyCode::Space,  GamepadButton::South],
+                            ),
+                            (
+                                Action::<RotateCamera>::new(),
+                                Scale::splat(0.07),
+                                Bindings::spawn((
+                                    Spawn(Binding::mouse_motion()),
+                                    Axial::right_stick()
+                                ))
+                            ),
+                            (
+                                Action::<PullObject>::new(),
+                                ActionSettings { consume_input: true, ..default() },
+                                Press::default(),
+                                bindings![MouseButton::Left, MouseButton::Right]
+                            ),
+                            (
+                                Action::<DropObject>::new(),
+                                ActionSettings { consume_input: true, ..default() },
+                                Press::default(),
+                                bindings![MouseButton::Left, MouseButton::Right]
+                            ),
+                        ]),
+                    ))
+                    .id();
+
+                commands.spawn((
+                    Camera3d::default(),
+                    // #[cfg(debug_assertions)]
+                    OcclusionCulling,
+                    Projection::Perspective(PerspectiveProjection {
+                        fov: 70f32.to_radians(),
+                        near: 0.01,
+                        ..default()
+                    }),
+                    Hdr,
+                    Bloom {
+                        intensity: 0.5,
+                        ..default()
+                    },
+                    Tonemapping::default(),
+                    Atmosphere::earthlike(scattering_mediums.add(ScatteringMedium::default())),
+                    CharacterControllerCameraOf::new(player),
+                    PickupConfig {
+                        prop_filter: SpatialQueryFilter::from_mask([
+                            CollisionLayer::Prop,
+                            CollisionLayer::Ticket,
+                        ]),
+                        actor_filter: SpatialQueryFilter::from_mask(CollisionLayer::Player),
+                        obstacle_filter: SpatialQueryFilter::from_mask(CollisionLayer::Default),
+                        interaction_distance: 2.5,
+                        ..default()
+                    },
+                ));
             },
-            CollectedTickets::default(),
-            Collider::cylinder(0.4, 1.8),
-            CollisionLayers::new(CollisionLayer::Player, LayerMask::DEFAULT),
-            trans,
-            PlayerLook,
-            actions!(PlayerLook[
-                (
-                    Action::<RotateCamera>::new(),
-                    Scale::splat(0.07),
-                    Bindings::spawn((
-                        Spawn(Binding::mouse_motion()),
-                        Axial::right_stick()
-                    ))
-                ),
-            ]),
-            PlayerMovement,
-            actions!(PlayerMovement[
-                (
-                    Action::<Movement>::new(),
-                    DeadZone::default(),
-                    Bindings::spawn((
-                        Cardinal::wasd_keys(),
-                        Cardinal::arrows(),
-                        Axial::left_stick()
-                    ))
-                ),
-                (
-                    Action::<Jump>::new(),
-                    bindings![KeyCode::Space,  GamepadButton::South],
-                ),
-                (
-                    Action::<RotateCamera>::new(),
-                    Scale::splat(0.07),
-                    Bindings::spawn((
-                        Spawn(Binding::mouse_motion()),
-                        Axial::right_stick()
-                    ))
-                ),
-                (
-                    Action::<PullObject>::new(),
-                    ActionSettings { consume_input: true, ..default() },
-                    Press::default(),
-                    bindings![MouseButton::Left, MouseButton::Right]
-                ),
-                (
-                    Action::<DropObject>::new(),
-                    ActionSettings { consume_input: true, ..default() },
-                    Press::default(),
-                    bindings![MouseButton::Left, MouseButton::Right]
-                ),
-            ]),
-        ))
-        .id();
-
-    commands.spawn((
-        Camera3d::default(),
-        Projection::Perspective(PerspectiveProjection {
-            fov: 70f32.to_radians(),
-            near: 0.01,
-            ..default()
-        }),
-        Hdr,
-        Bloom {
-            intensity: 0.5,
-            ..default()
-        },
-        Tonemapping::default(),
-        Atmosphere::earthlike(scattering_mediums.add(ScatteringMedium::default())),
-        CharacterControllerCameraOf::new(player),
-        PickupConfig {
-            prop_filter: SpatialQueryFilter::from_mask([
-                CollisionLayer::Prop,
-                CollisionLayer::Ticket,
-            ]),
-            actor_filter: SpatialQueryFilter::from_mask(CollisionLayer::Player),
-            obstacle_filter: SpatialQueryFilter::from_mask(CollisionLayer::Default),
-            ..default()
-        },
-    ));
+        );
 }
 
 #[derive(Debug, Component)]
