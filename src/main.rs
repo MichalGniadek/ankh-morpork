@@ -50,7 +50,7 @@ fn main() -> AppExit {
                     .default_solid_scene_hooks(|| SceneHooks::new().convex_collider()),
             )
             .build();
-            #[cfg(not(debug_assertions))]
+            #[cfg(all(not(debug_assertions), not(target_family = "wasm")))]
             let plugins =
                 plugins.disable::<bevy_trenchbroom::config::WriteTrenchBroomConfigOnStartPlugin>();
             plugins
