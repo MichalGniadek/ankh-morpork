@@ -61,12 +61,12 @@ env:
 
   # The itch.io project to deploy to in the format `user-name/project-name`.
   # There will be no deployment to itch.io if this is commented out.
-  itch_page: the-bevy-flock/bevy-new-2d
+  # itch_page: the-bevy-flock/bevy-new-2d
 
   # The ID of the app produced by this workflow.
   # Applies to macOS releases.
   # Must contain only A-Z, a-z, 0-9, hyphen, and period: <https://developer.apple.com/documentation/bundleresources/information_property_list/cfbundleidentifier>.
-  app_id: the-bevy-flock.bevy-new-2d
+  app_id: ankh-morpork
 
   # The base filename of the binary in the package produced by this workflow.
   # Applies to Windows, macOS, and Linux releases.
@@ -95,7 +95,7 @@ env:
   # Enable these to deploy on every push to `main`.
   # Make sure to set up any enabled targets. Builds will ignore warnings.
   # Warning: If you use private repositories, this will eat through your available worker minutes quickly.
-  # continuous_deployment_to_itch: true
+  continuous_deployment_to_itch: false
   continuous_deployment_to_github_pages: false
 
 jobs:
@@ -339,7 +339,7 @@ jobs:
           retention-days: 1
 
       - name: Upload web bundle to workflow artifacts for GitHub Pages (Web)
-        if: ${{ env.is_platform_enabled == 'true' && matrix.platform == 'web' && inputs.deploy_to_github_pages}}
+        if: ${{ env.is_platform_enabled == 'true' && matrix.platform == 'web' && (inputs.deploy_to_github_pages || (github.event_name == 'push' && needs.forward-env.outputs.continuous_deployment_to_github_pages == 'true')) }}
         uses: actions/upload-pages-artifact@v3
         with:
           path: ${{ env.app }}/${{ env.cargo_build_binary_name }}

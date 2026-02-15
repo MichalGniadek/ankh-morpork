@@ -1,5 +1,6 @@
 use avian3d::prelude::*;
 use bevy::{
+    asset::AssetMetaCheck,
     color::palettes::{css::GOLD, tailwind},
     core_pipeline::tonemapping::Tonemapping,
     input::common_conditions::input_just_pressed,
@@ -26,7 +27,22 @@ use bevy_trenchbroom_avian::AvianPhysicsBackend;
 
 fn main() -> AppExit {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(
+            DefaultPlugins
+                .set(AssetPlugin {
+                    meta_check: AssetMetaCheck::Never,
+                    ..Default::default()
+                })
+                .set(WindowPlugin {
+                    primary_window: Window {
+                        title: "Ankh Morpork".to_string(),
+                        fit_canvas_to_parent: true,
+                        ..default()
+                    }
+                    .into(),
+                    ..default()
+                }),
+        )
         .add_plugins(TrenchBroomPlugins(
             TrenchBroomConfig::new("ankh-morpork")
                 .default_solid_scene_hooks(|| SceneHooks::new().convex_collider()),
