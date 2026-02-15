@@ -4,10 +4,12 @@ use bevy::{
     core_pipeline::tonemapping::Tonemapping,
     input::common_conditions::input_just_pressed,
     light::{NotShadowCaster, PointLightShadowMap},
+    math::Affine2,
     pbr::{Atmosphere, ScatteringMedium},
     post_process::bloom::Bloom,
     prelude::*,
     render::{experimental::occlusion_culling::OcclusionCulling, view::Hdr},
+    text::TextSpanAccess,
     window::{CursorGrabMode, CursorOptions},
 };
 use bevy_ahoy::{
@@ -50,9 +52,13 @@ fn main() -> AppExit {
                 init_box,
                 init_lever,
                 init_ticket,
+                init_strajk_msg,
+                init_tickets_msg,
+                init_ship_msg,
                 lower_bars,
                 check_for_river,
                 update_ticket,
+                update_ui,
                 #[cfg(debug_assertions)]
                 speedup_lights,
             ),
@@ -124,11 +130,116 @@ struct River;
 #[point_class(model("models/Button.gltf"), hooks(SceneHooks::new().spawn_class_gltf::<Self>()))]
 struct Lever;
 
+#[point_class(model("models/Cart.glb"), hooks(SceneHooks::new().spawn_class_gltf::<Self>()))]
+struct Cart;
+
+#[point_class(model("models/MarketStand_1.glb"), hooks(SceneHooks::new().spawn_class_gltf::<Self>()))]
+struct MarketStand1;
+
+#[point_class(model("models/MarketStand_2.glb"), hooks(SceneHooks::new().spawn_class_gltf::<Self>()))]
+struct MarketStand2;
+
+#[point_class(model("models/Coin.glb"), hooks(SceneHooks::new().spawn_class_gltf::<Self>()))]
+struct Coin;
+
+#[point_class(model("models/Skeleton_body.glb"), hooks(SceneHooks::new().spawn_class_gltf::<Self>()))]
+struct SkeletonBody;
+
+#[point_class(model("models/Skeleton_head.glb"), hooks(SceneHooks::new().spawn_class_gltf::<Self>()))]
+struct SkeletonHead;
+
+#[point_class(model("models/Bookcase_Full.glb"), hooks(SceneHooks::new().spawn_class_gltf::<Self>()))]
+struct Bookcase;
+
+#[point_class(model("models/Goblin_Male.glb"), hooks(SceneHooks::new().spawn_class_gltf::<Self>()))]
+struct Goblin1;
+
+#[point_class(model("models/Goblin_Female.glb"), hooks(SceneHooks::new().spawn_class_gltf::<Self>()))]
+struct Goblin2;
+
 #[solid_class]
 struct Bars;
 
 #[point_class(color(255 217 0))]
 struct Ticket;
+
+#[point_class(iconsprite({"path": "textures/Parchment_strajk.png", "scale": "0.02"}))]
+struct StrajkMsg;
+
+fn init_strajk_msg(
+    q: Query<Entity, Added<StrajkMsg>>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
+) {
+    for entity in q {
+        commands.entity(entity).insert((
+            Mesh3d(meshes.add(Plane3d::new(Vec3::X, vec2(0.5, 0.5)))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color_texture: Some(asset_server.load("textures/Parchment_strajk.png")),
+                perceptual_roughness: 1.,
+                cull_mode: None,
+                alpha_mode: AlphaMode::Mask(0.5),
+                uv_transform: Affine2::from_angle_translation(1.5708, vec2(1., 0.)),
+                ..default()
+            })),
+            NotShadowCaster,
+        ));
+    }
+}
+
+#[point_class(iconsprite({"path": "textures/Parchment_tickets.png", "scale": "0.02"}))]
+struct TicketMsg;
+
+fn init_tickets_msg(
+    q: Query<Entity, Added<TicketMsg>>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
+) {
+    for entity in q {
+        commands.entity(entity).insert((
+            Mesh3d(meshes.add(Plane3d::new(Vec3::X, vec2(0.5, 0.5)))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color_texture: Some(asset_server.load("textures/Parchment_tickets.png")),
+                perceptual_roughness: 1.,
+                cull_mode: None,
+                alpha_mode: AlphaMode::Mask(0.5),
+                uv_transform: Affine2::from_angle_translation(1.5708, vec2(1., 0.)),
+                ..default()
+            })),
+            NotShadowCaster,
+        ));
+    }
+}
+
+#[point_class(iconsprite({"path": "textures/Parchment_ship.png", "scale": "0.02"}))]
+struct ShipMsg;
+
+fn init_ship_msg(
+    q: Query<Entity, Added<ShipMsg>>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
+) {
+    for entity in q {
+        commands.entity(entity).insert((
+            Mesh3d(meshes.add(Plane3d::new(Vec3::X, vec2(0.5, 0.5)))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color_texture: Some(asset_server.load("textures/Parchment_ship.png")),
+                perceptual_roughness: 1.,
+                cull_mode: None,
+                alpha_mode: AlphaMode::Mask(0.5),
+                uv_transform: Affine2::from_angle_translation(1.5708, vec2(1., 0.)),
+                ..default()
+            })),
+            NotShadowCaster,
+        ));
+    }
+}
 
 fn init_ticket(
     q: Query<Entity, Added<Ticket>>,
@@ -161,11 +272,11 @@ fn init_ticket(
 }
 
 #[derive(Debug, Component, Default)]
-struct CollectedTickets(u32);
+struct CollectedTickets(usize);
 
 fn update_ticket(
     tickets: Query<(Entity, &mut Transform, Has<QueuedToDespawn>), With<Ticket>>,
-    mut player: Single<&mut CollectedTickets>,
+    mut collected: Single<&mut CollectedTickets>,
     pickup: Single<(Entity, &AvianPickupActorState)>,
     mut commands: Commands,
     time: Res<Time>,
@@ -181,9 +292,9 @@ fn update_ticket(
                 actor: pickup.0,
             });
             commands.entity(entity).insert(QueuedToDespawn);
-            player.0 += 1;
         } else if queued_to_despawn {
             commands.entity(entity).despawn();
+            collected.0 += 1;
         }
     }
 }
@@ -218,6 +329,19 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             ..default()
         },
     ));
+
+    commands
+        .spawn(Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            align_items: AlignItems::FlexStart,
+            justify_content: JustifyContent::FlexStart,
+            padding: UiRect::bottom(Val::Px(20.0)),
+            ..default()
+        })
+        .with_children(|parent| {
+            parent.spawn((Text::new("Golden Tickets"), TextColor(GOLD.into())));
+        });
 
     commands
         .spawn(SceneRoot(asset_server.load("ankh.map#Scene")))
@@ -376,4 +500,21 @@ fn lower_bars(
             bar.translation.y -= 0.8 * time.delta_secs();
         }
     }
+}
+
+fn update_ui(
+    collected: Single<&CollectedTickets>,
+    tickets: Query<(), With<Ticket>>,
+    mut text: Single<&mut Text>,
+) {
+    *text.write_span() = format!(
+        "Collected golden tickets: {}/{} {}",
+        collected.0,
+        collected.0 + tickets.count(),
+        if tickets.count() == 0 {
+            "(koniec, wejście do wieży magów nie jest zaimplementowane)"
+        } else {
+            ""
+        }
+    );
 }
