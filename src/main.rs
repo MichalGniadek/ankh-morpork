@@ -457,6 +457,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                         ..default()
                     },
                     Tonemapping::default(),
+                    #[cfg(not(target_family = "wasm"))]
                     Atmosphere::earthlike(scattering_mediums.add(ScatteringMedium::default())),
                     CharacterControllerCameraOf::new(player),
                     PickupConfig {
