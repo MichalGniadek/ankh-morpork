@@ -43,10 +43,18 @@ fn main() -> AppExit {
                     ..default()
                 }),
         )
-        .add_plugins(TrenchBroomPlugins(
-            TrenchBroomConfig::new("ankh-morpork")
-                .default_solid_scene_hooks(|| SceneHooks::new().convex_collider()),
-        ))
+        .add_plugins({
+            let plugins = TrenchBroomPlugins(
+                TrenchBroomConfig::new("ankh-morpork")
+                    .generic_material_extensions([])
+                    .default_solid_scene_hooks(|| SceneHooks::new().convex_collider()),
+            )
+            .build();
+            #[cfg(not(debug_assertions))]
+            let plugins =
+                plugins.disable::<bevy_trenchbroom::config::WriteTrenchBroomConfigOnStartPlugin>();
+            plugins
+        })
         .add_plugins(PhysicsPlugins::default())
         .add_plugins(TrenchBroomPhysicsPlugin::new(AvianPhysicsBackend))
         .add_plugins(EnhancedInputPlugin)
